@@ -47,11 +47,12 @@
 /*
  * adsbrain: define global variables
  */
+#include <math.h>
 char * AB_ENTRYPOINT            = NULL;
 char * AB_IN_OUT_JSON_P1        = NULL;
-size_t AB_IN_OUT_JSON_P1_len    = 0;
+size_t AB_IN_OUT_JSON_P1_LEN    = 0;
 char * AB_IN_OUT_JSON_P2        = NULL;
-size_t AB_IN_OUT_JSON_P2_len    = 0;
+size_t AB_IN_OUT_JSON_P2_LEN    = 0;
 // ======== end of adsbrain change ========
 
 /**
@@ -1914,25 +1915,25 @@ htp__request_parse_body_(htparser * p, const char * data, size_t len)
                  * adsbrain: override body
                  */
                 long content_length_ = atol(content_length);
-                if (AB_IN_OUT_JSON == NULL) {
+                if (AB_IN_OUT_JSON_P1 == NULL) {
                     evbuffer_reserve_space(
                         c->request->buffer_in, content_length_, &output_iovec, 1);
                 }
                 else {
                     // override body by Triton binary input
-                    long new_content_length = content_length_ + sizeof(uint32_t);   // format: <uint32-q-len><q>
-                    int d = (int)(log10(new_content_length) + 1);
-                    const int max_len = 5;    // > 10000
-                    if (d > max_len || ) {
+                    size_t new_content_length = content_length_ + sizeof(uint32_t);   // format: <uint32-q-len><q>
+                    size_t d = (size_t)(log10(new_content_length) + 1);
+                    const size_t max_len = 5;
+                    
+                    if (d > max_len) {
                         log_debug("Content length is too big: %s", content_length);
                         return -1;
                     }
                     char str[max_len + 1];
-                    sprintf(str, "%d",  new_content_length);
-                    evbuffer_reserve_space(
-                        c->request->buffer_in, 
-                        AB_IN_OUT_JSON_P1_LEN + d + AB_IN_OUT_JSON_P2_LEN + new_content_length, 
-                        &output_iovec, 1);
+                    sprintf(str, "%ld",  new_content_length);
+                    size_t json_len = AB_IN_OUT_JSON_P1_LEN + d + AB_IN_OUT_JSON_P2_LEN;
+                    size_t cont_len = json_len + new_content_length;
+                    evbuffer_reserve_space(c->request->buffer_in, cont_len, &output_iovec, 1);
                     evbuffer_add(c->request->buffer_in, AB_IN_OUT_JSON_P1, AB_IN_OUT_JSON_P1_LEN);
                     evbuffer_add(c->request->buffer_in, str, strlen(str));
                     evbuffer_add(c->request->buffer_in, AB_IN_OUT_JSON_P2, AB_IN_OUT_JSON_P2_LEN);
@@ -1940,13 +1941,27 @@ htp__request_parse_body_(htparser * p, const char * data, size_t len)
                     evbuffer_add(c->request->buffer_in, (char const *)(&n), sizeof(n));
 
                     // add header Inference-Header-Content-Length
-                    evhtp_header_t * header;
-                    sprintf(str, "%d",  AB_IN_OUT_JSON_P1_LEN + d + AB_IN_OUT_JSON_P2_LEN);
-                    if (!(header = evhtp_header_new("Inference-Header-Content-Length", str, 1, 1))) {
-                        return -1;
-                    }
+                    sprintf(str, "%ld",  json_len);
+                    evhtp_headers_add_header(c->request->headers_in, 
+                        evhtp_header_new("Inference-Header-Content-Length", str, 1, 1));
 
-                    evhtp_headers_add_header(c->request->headers_in, header);
+                    // update Content-Length
+                    evhtp_kv_t * kv;
+                    sprintf(str, "%ld",  cont_len);
+                    TAILQ_FOREACH(kv, c->request->headers_in, next) {
+                        if (strcasecmp(kv->key, "Content-Length") == 0) {
+                            if (kv->v_heaped == 1) {
+                                evhtp_safe_free(kv->val, htp__free_);
+                            }
+                            kv->vlen = strlen(str);
+                            char * s = htp__malloc_(kv->vlen + 1);
+                            s[kv->vlen] = '\0';
+                            memcpy(s, str, kv->vlen);
+                            kv->val = s;
+                            kv->v_heaped = 1;
+                            break;
+                        }
+                    }
                 }
                 // ======== end of adsbrain change ========
             }
