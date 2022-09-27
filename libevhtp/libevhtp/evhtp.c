@@ -44,6 +44,16 @@
 #include "triton_timestamp.h"
 #endif  // EVHTP_TRITON_ENABLE_TRACING
 
+/*
+ * adsbrain: define global variables
+ */
+char * AB_ENTRYPOINT            = NULL;
+char * AB_IN_OUT_JSON_P1        = NULL;
+size_t AB_IN_OUT_JSON_P1_len    = 0;
+char * AB_IN_OUT_JSON_P2        = NULL;
+size_t AB_IN_OUT_JSON_P2_len    = 0;
+// ======== end of adsbrain change ========
+
 /**
  * @brief structure containing a single callback and configuration
  *
@@ -1104,7 +1114,17 @@ htp__path_new_(evhtp_path_t ** out, const char * data, size_t len)
             }
         } else {
             /* the last character is a "/", thus the request is just a path */
-            path = htp__strndup_(data, len);
+
+            /*
+             * adsbrain: override path
+             */
+            if (AB_ENTRYPOINT == NULL) {
+                path = htp__strndup_(data, len);
+            }
+            else {
+                path = htp__strdup_(AB_ENTRYPOINT);
+            }
+            // ======== end of adsbrain change ========
 
             if (evhtp_unlikely(path == NULL)) {
                 goto error;
@@ -1112,11 +1132,16 @@ htp__path_new_(evhtp_path_t ** out, const char * data, size_t len)
         }
     }
 
-    if (len != 0) {
-        req_path->full = htp__strndup_(data, len);
-    } else {
-        req_path->full = htp__strdup_("/");
+    /*
+     * adsbrain: override full path
+     */
+    if (AB_ENTRYPOINT == NULL) {
+        req_path->full = (len != 0) ? htp__strndup_(data, len) : htp__strdup_("/");
     }
+    else {
+        req_path->full = htp__strdup_(AB_ENTRYPOINT);
+    }
+    // ======== end of adsbrain change ========
 
     if (evhtp_unlikely(req_path->full == NULL)) {
         goto error;
@@ -1885,8 +1910,45 @@ htp__request_parse_body_(htparser * p, const char * data, size_t len)
                 log_debug("reserving buffer_in for content_length: %s", content_length);
 
                 struct evbuffer_iovec output_iovec;
-                evbuffer_reserve_space(
-                    c->request->buffer_in, atol(content_length), &output_iovec, 1);
+                /*
+                 * adsbrain: override body
+                 */
+                long content_length_ = atol(content_length);
+                if (AB_IN_OUT_JSON == NULL) {
+                    evbuffer_reserve_space(
+                        c->request->buffer_in, content_length_, &output_iovec, 1);
+                }
+                else {
+                    // override body by Triton binary input
+                    long new_content_length = content_length_ + sizeof(uint32_t);   // format: <uint32-q-len><q>
+                    int d = (int)(log10(new_content_length) + 1);
+                    const int max_len = 5;    // > 10000
+                    if (d > max_len || ) {
+                        log_debug("Content length is too big: %s", content_length);
+                        return -1;
+                    }
+                    char str[max_len + 1];
+                    sprintf(str, "%d",  new_content_length);
+                    evbuffer_reserve_space(
+                        c->request->buffer_in, 
+                        AB_IN_OUT_JSON_P1_LEN + d + AB_IN_OUT_JSON_P2_LEN + new_content_length, 
+                        &output_iovec, 1);
+                    evbuffer_add(c->request->buffer_in, AB_IN_OUT_JSON_P1, AB_IN_OUT_JSON_P1_LEN);
+                    evbuffer_add(c->request->buffer_in, str, strlen(str));
+                    evbuffer_add(c->request->buffer_in, AB_IN_OUT_JSON_P2, AB_IN_OUT_JSON_P2_LEN);
+                    uint32_t n = content_length_;
+                    evbuffer_add(c->request->buffer_in, (char const *)(&n), sizeof(n));
+
+                    // add header Inference-Header-Content-Length
+                    evhtp_header_t * header;
+                    sprintf(str, "%d",  AB_IN_OUT_JSON_P1_LEN + d + AB_IN_OUT_JSON_P2_LEN);
+                    if (!(header = evhtp_header_new("Inference-Header-Content-Length", str, 1, 1))) {
+                        return -1;
+                    }
+
+                    evhtp_headers_add_header(c->request->headers_in, header);
+                }
+                // ======== end of adsbrain change ========
             }
 
             evbuffer_add(c->request->buffer_in, data, len);
@@ -5400,6 +5462,57 @@ evhtp_new(struct event_base * evbase, void * arg)
         return NULL;
     }
 
+    /*
+     * adsbrain: get environment variable settings
+     */
+    // env AB_ENTRYPOINT
+    const char * v = getenv("AB_ENTRYPOINT");
+    if (v != NULL) {
+        AB_ENTRYPOINT = strdup(v);
+        if (AB_ENTRYPOINT == NULL) {
+            return NULL;
+        }
+    }
+
+    // env AB_IN_OUT_JSON
+    v = getenv("AB_IN_OUT_JSON");
+    if (v != NULL) {
+        char const * k = "binary_data_size";
+        char * p = strstr(v, k);
+        if (p == NULL) {
+            return NULL;
+        }
+        p += strlen(k);
+
+        // part 1
+        while (*p != ':' && *p != '\0') p++;
+        if (*p == '\0') {
+            return NULL;
+        }
+        p += 1;
+
+        AB_IN_OUT_JSON_P1 = strndup(v, (size_t)(p - v));
+        if (AB_IN_OUT_JSON_P1 == NULL) {
+            return NULL;
+        }
+
+        AB_IN_OUT_JSON_P1_LEN = strlen(AB_IN_OUT_JSON_P1);
+
+        // part 2
+        while (*p != ',' && *p != '}' && *p != '\0') p++;
+        if (*p == '\0') {
+            return NULL;
+        }
+
+        AB_IN_OUT_JSON_P2 = strdup(p);
+        if (AB_IN_OUT_JSON_P2 == NULL) {
+            return NULL;
+        }
+
+        AB_IN_OUT_JSON_P2_LEN = strlen(AB_IN_OUT_JSON_P2);
+    }
+    // ======== end of adsbrain change ========
+
     return htp;
 }
 
@@ -5445,6 +5558,22 @@ evhtp_free(evhtp_t * evhtp)
     }
 
     evhtp_safe_free(evhtp, htp__free_);
+
+    /*
+     * adsbrain: release global variables' memory
+     */
+    if (AB_ENTRYPOINT) {
+        evhtp_safe_free(AB_ENTRYPOINT, htp__free_);
+    }
+
+    if (AB_IN_OUT_JSON_P1) {
+        evhtp_safe_free(AB_IN_OUT_JSON_P1, htp__free_);
+    }
+
+    if (AB_IN_OUT_JSON_P2) {
+        evhtp_safe_free(AB_IN_OUT_JSON_P2, htp__free_);
+    }
+    // ======== end of adsbrain change ========
 }         /* evhtp_free */
 
 /*****************************************************************
