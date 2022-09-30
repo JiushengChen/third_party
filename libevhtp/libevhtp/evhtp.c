@@ -5533,9 +5533,9 @@ evhtp_new(struct event_base * evbase, void * arg)
     // env AB_IN_OUT_RAW
     v = getenv("AB_IN_OUT_RAW");
     if (v != NULL) {
-        printf("[adsbrain] AB_IN_OUT_RAW=%s\n", v);
         AB_IN_OUT_RAW = strcmp(v, "0") == 0 ? 0 : 1;
     }
+    printf("[adsbrain] AB_IN_OUT_RAW=%d\n", AB_IN_OUT_RAW);
     // ======== end of adsbrain change ========
 
     return htp;
