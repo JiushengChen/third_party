@@ -54,7 +54,7 @@ char * AB_IN_OUT_JSON_P1        = NULL;
 size_t AB_IN_OUT_JSON_P1_LEN    = 0;
 char * AB_IN_OUT_JSON_P2        = NULL;
 size_t AB_IN_OUT_JSON_P2_LEN    = 0;
-int AB_IN_OUT_RAW               = 0;
+int AB_IN_OUT_RAW               = 1;
 // ======== end of adsbrain change ========
 
 /**
@@ -5534,7 +5534,7 @@ evhtp_new(struct event_base * evbase, void * arg)
     v = getenv("AB_IN_OUT_RAW");
     if (v != NULL) {
         printf("[adsbrain] AB_IN_OUT_RAW=%s\n", v);
-        AB_IN_OUT_RAW = strcmp(v, "1") == 0 ? 1 : 0;
+        AB_IN_OUT_RAW = strcmp(v, "0") == 0 ? 0 : 1;
     }
     // ======== end of adsbrain change ========
 
