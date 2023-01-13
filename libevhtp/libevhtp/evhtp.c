@@ -49,12 +49,12 @@
  */
 #include <math.h>
 const size_t AB_MAX_DIGITS      = 16;
-char * AB_ENTRYPOINT            = NULL;
-char * AB_IN_OUT_JSON_P1        = NULL;
-size_t AB_IN_OUT_JSON_P1_LEN    = 0;
-char * AB_IN_OUT_JSON_P2        = NULL;
-size_t AB_IN_OUT_JSON_P2_LEN    = 0;
-int AB_IN_OUT_RAW               = 1;
+char * AB_ENTRYPOINT            = NULL; // model entrypoint string, will override every request
+char * AB_IN_OUT_JSON_P1        = NULL; // JSON config part 1
+size_t AB_IN_OUT_JSON_P1_LEN    = 0;    // JSON config part 1 length
+char * AB_IN_OUT_JSON_P2        = NULL; // JSON config part 2
+size_t AB_IN_OUT_JSON_P2_LEN    = 0;    // JSON config part 2 length
+int AB_IN_OUT_RAW               = 1;    // RAW tensor format
 // ======== end of adsbrain change ========
 
 /**
@@ -1926,7 +1926,10 @@ htp__request_parse_body_(htparser * p, const char * data, size_t len)
                 }
                 // override body by Triton binary tensor input
                 else if (AB_IN_OUT_JSON_P1 != NULL && AB_IN_OUT_JSON_P2 != NULL) {
-                    size_t tensor_length = content_length_ + sizeof(uint32_t);   // format: <uint32-q-len><q>
+                    // e.g, an input tensor in the shape of [2,2], would it be <uint32-q-len><q_0_0><uint32-q-len><q_0_1><uint32-q-len><q_1_0><uint32-q-len><q_1_1>
+                    // only handle shape [1] for now.
+                    // todo jiuchen: handle multi-dim tensor.
+                    size_t tensor_length = content_length_ + sizeof(uint32_t);
                     size_t d = (size_t)(log10(tensor_length) + 1);
                     char str[AB_MAX_DIGITS + 1];
                     sprintf(str, "%ld",  tensor_length);
