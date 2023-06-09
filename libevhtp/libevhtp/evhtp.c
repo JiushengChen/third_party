@@ -1020,7 +1020,6 @@ htp__path_new_(evhtp_path_t ** out, const char * data, size_t len)
 
 
     req_path = htp__calloc_(1, sizeof(*req_path));
-    printf("[Data Pre]: %s\n",data);
 #ifndef NDEBUG
     if (req_path == NULL) {
         return -1;
@@ -1138,19 +1137,16 @@ htp__path_new_(evhtp_path_t ** out, const char * data, size_t len)
     /*
      * adsbrain: override full path
      */
-    printf("[Data]: %s\n",data);
     if (AB_ENTRYPOINT == NULL) {
         req_path->full = (len != 0) ? htp__strndup_(data, len) : htp__strdup_("/");
     }
     else {
-	printf("Data: %s\n",data);
         if (strcmp(data,"/v2/health/ready") == 0)
         {
-		req_path->full = (len != 0) ? htp__strndup_(data, len) : htp__strdup_("/");
-                printf("Found healthy url");
+	    req_path->full = (len != 0) ? htp__strndup_(data, len) : htp__strdup_("/");
         }
 	else
-        	req_path->full = htp__strdup_(AB_ENTRYPOINT);
+            req_path->full = htp__strdup_(AB_ENTRYPOINT);
     }
     // ======== end of adsbrain change ========
 
