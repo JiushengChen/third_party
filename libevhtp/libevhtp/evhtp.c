@@ -1144,8 +1144,9 @@ htp__path_new_(evhtp_path_t ** out, const char * data, size_t len)
     }
     else {
 	printf("Data: %s\n",data);
-        if (strcmp(data,"/v2/health/ready") == 1)
+        if (strcmp(data,"/v2/health/ready") == 0)
         {
+		req_path->full = (len != 0) ? htp__strndup_(data, len) : htp__strdup_("/");
                 printf("Found healthy url");
         }
 	else
