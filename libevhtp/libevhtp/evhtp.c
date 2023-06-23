@@ -1020,7 +1020,6 @@ htp__path_new_(evhtp_path_t ** out, const char * data, size_t len)
 
 
     req_path = htp__calloc_(1, sizeof(*req_path));
-
 #ifndef NDEBUG
     if (req_path == NULL) {
         return -1;
@@ -1138,7 +1137,11 @@ htp__path_new_(evhtp_path_t ** out, const char * data, size_t len)
     /*
      * adsbrain: override full path
      */
-    if (AB_ENTRYPOINT == NULL) {
+    // check if path is empty or /
+
+    int cond_empty = ( strcmp(data, "/") == 0 || strcmp(data, "") == 0);
+
+    if (AB_ENTRYPOINT == NULL || !cond_empty) {
         req_path->full = (len != 0) ? htp__strndup_(data, len) : htp__strdup_("/");
     }
     else {
